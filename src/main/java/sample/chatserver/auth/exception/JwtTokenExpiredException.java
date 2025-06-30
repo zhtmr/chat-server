@@ -1,4 +1,4 @@
-package sample.chatserver.common.auth;
+package sample.chatserver.auth.exception;
 
 public class JwtTokenExpiredException extends RuntimeException {
     public JwtTokenExpiredException(String message) {

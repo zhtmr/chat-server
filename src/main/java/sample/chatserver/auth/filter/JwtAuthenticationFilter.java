@@ -1,4 +1,4 @@
-package sample.chatserver.common.auth;
+package sample.chatserver.auth.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
@@ -19,6 +19,9 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import sample.chatserver.auth.exception.JwtTokenExpiredException;
+import sample.chatserver.auth.exception.JwtTokenInvalidException;
+import sample.chatserver.common.JwtUtil;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -36,8 +39,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   private final RedisTemplate<String, String> redisTemplate;
 
   @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    String path = request.getRequestURI();
+    return path.startsWith("/api/auth/") ||
+           path.equals("/api/member/create") ||
+           path.startsWith("/connect/") ||
+           path.startsWith("/api/public/") ||
+           path.equals("/health") ||
+           path.startsWith("/swagger-ui") ||
+           path.startsWith("/v3/api-docs");
+  }
+
+  @Override
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
+
     try {
       String authHeader = request.getHeader("Authorization");
       String token = jwtUtil.extractTokenFromHeader(authHeader);
@@ -68,7 +84,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       }
 
       // 2. JWT 토큰에서 사용자 정보 추출
-      String username = jwtUtil.extractUsername(token);
+      String username = jwtUtil.extractEmail(token);
       String role = jwtUtil.extractRole(token);
 
       // 5. JWT 토큰 정보로 직접 UserDetails 생성
@@ -127,13 +143,4 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         .write(objectMapper.writeValueAsString(errorResponse));
   }
 
-  @Override
-  protected boolean shouldNotFilter(HttpServletRequest request) {
-    String path = request.getRequestURI();
-    return path.startsWith("/api/auth/") ||
-           path.startsWith("/api/public/") ||
-           path.equals("/health") ||
-           path.startsWith("/swagger-ui") ||
-           path.startsWith("/v3/api-docs");
-  }
 }

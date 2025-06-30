@@ -1,9 +1,11 @@
-package sample.chatserver.common.config;
+package sample.chatserver.config;
 
 import lombok.extern.slf4j.Slf4j;
-import sample.chatserver.common.auth.JwtAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -14,6 +16,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import sample.chatserver.auth.filter.JwtAuthenticationFilter;
+import sample.chatserver.security.CustomUserDetailsService;
 
 import java.util.List;
 
@@ -21,11 +25,20 @@ import java.util.List;
 @Configuration
 public class SecurityConfig {
 
-  private final JwtAuthFilter jwtAuthFilter;
+  //  private final JwtAuthFilter jwtAuthFilter;
+  private final JwtAuthenticationFilter jwtAuthenticationFilter;
+  private final CustomUserDetailsService userDetailsService;
 
-  public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
-    this.jwtAuthFilter = jwtAuthFilter;
+
+  public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, CustomUserDetailsService userDetailsService) {
+    this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    this.userDetailsService = userDetailsService;
   }
+
+  //  public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
+  //    this.jwtAuthFilter = jwtAuthFilter;
+  //  }
+
 
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -33,13 +46,14 @@ public class SecurityConfig {
         .cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .csrf(AbstractHttpConfigurer::disable) // csrf 비활성화
         .httpBasic(AbstractHttpConfigurer::disable) // HTTP Basic 비활성화
-        .authorizeHttpRequests(auth -> auth.requestMatchers("/member/create", "/member/login", "/connect")
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/api/auth/**", "/api/member/create", "/connect/**")
             .permitAll()
             .anyRequest()
             .authenticated())
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))  // 세션방식 사용하지 않겠다는 의미
-        .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
         .build();
   }
 
@@ -57,7 +71,20 @@ public class SecurityConfig {
 
   @Bean
   public PasswordEncoder passwordEncoder() {
-    log.info("✅ PasswordEncoder Bean Created");
     return PasswordEncoderFactories.createDelegatingPasswordEncoder();
   }
+
+  @Bean
+  public DaoAuthenticationProvider authenticationProvider() {
+    DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
+    authProvider.setPasswordEncoder(passwordEncoder());
+    return authProvider;
+
+  }
+
+  @Bean
+  public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+    return config.getAuthenticationManager();
+  }
+
 }

@@ -1,4 +1,4 @@
-package sample.chatserver.common.auth;
+package sample.chatserver.common;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
@@ -6,6 +6,8 @@ import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import sample.chatserver.auth.exception.JwtTokenExpiredException;
+import sample.chatserver.auth.exception.JwtTokenInvalidException;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
@@ -16,12 +18,12 @@ import java.util.function.Function;
 public class JwtUtil {
 
   private final SecretKey secretKey;
-  private final int expiration;
+
+  private static final long CLOCK_SKEW_ALLOWED = 300; // 5분
 
   // 생성자에서 비밀키 초기화
-  public JwtUtil(@Value("${jwt.secretKey}") String secret, @Value("${jwt.expiration}") int expiration) {
+  public JwtUtil(@Value("${jwt.secretKey}") String secret) {
     this.secretKey = getSigningKey(secret);
-    this.expiration = expiration;
   }
 
   private SecretKey getSigningKey(String secret) {
@@ -33,24 +35,24 @@ public class JwtUtil {
    * JWT 토큰 생성
    *
    * @param email email
-   * @param role  사용자 권한
+   * @param expiration  expiration
    * @return JWT 토큰 문자열
    */
-  public String createJwt(String email, String role) {
+  public String createJwt(String email, long expiration) {
     Date now = new Date();
+    Date expiryDate = new Date(now.getTime() + expiration);
     return Jwts.builder()
-        .subject(email)                              // 표준 sub 클레임
-        .claim("role", role)                            // 사용자 권한
-        .issuedAt(now) // 발행 시간
-        .expiration(new Date(now.getTime() + expiration * 60 * 1000L)) // 만료 시간
-        .signWith(secretKey)                            // 서명
+        .subject(email)
+        .issuedAt(now)
+        .expiration(expiryDate)
+        .signWith(secretKey)
         .compact();
   }
 
   /**
    * 토큰에서 사용자명 추출
    */
-  public String extractUsername(String token) {
+  public String extractEmail(String token) {
     return extractClaim(token, Claims::getSubject);
   }
 
@@ -84,29 +86,13 @@ public class JwtUtil {
   }
 
 
-  private Claims extractAllClaims(String token) {
-    try {
+  public Claims extractAllClaims(String token) {
       return Jwts.parser()
           .verifyWith(secretKey)
+          .clockSkewSeconds(CLOCK_SKEW_ALLOWED)
           .build()
           .parseSignedClaims(token)
           .getPayload();
-    } catch (ExpiredJwtException e) {
-      log.warn("JWT token is expired: {}", e.getMessage());
-      throw new JwtTokenExpiredException("JWT token is expired");
-    } catch (UnsupportedJwtException e) {
-      log.warn("JWT token is unsupported: {}", e.getMessage());
-      throw new JwtTokenInvalidException("JWT token is unsupported");
-    } catch (MalformedJwtException e) {
-      log.warn("JWT token is malformed: {}", e.getMessage());
-      throw new JwtTokenInvalidException("JWT token is malformed");
-    } catch (SignatureException e) {
-      log.warn("JWT signature does not match: {}", e.getMessage());
-      throw new JwtTokenInvalidException("JWT signature validation failed");
-    } catch (IllegalArgumentException e) {
-      log.warn("JWT token compact of handler are invalid: {}", e.getMessage());
-      throw new JwtTokenInvalidException("JWT token is invalid");
-    }
   }
 
   /**
@@ -131,7 +117,7 @@ public class JwtUtil {
    * 토큰과 사용자명으로 토큰 유효성 검증
    */
   public boolean validateToken(String token, String username) {
-    final String tokenUsername = extractUsername(token);
+    final String tokenUsername = extractEmail(token);
     return (username.equals(tokenUsername) && !isTokenExpired(token));
   }
 
